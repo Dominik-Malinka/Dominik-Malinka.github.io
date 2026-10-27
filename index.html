@@ -183,6 +183,8 @@ table.codes td:first-child { font-weight: 700; width: 52px; }
 .kv dt { color: var(--mute); }
 .kv dd { margin: 0; text-align: right; }
 .err-inline { color: var(--err); font-size: 13px; min-height: 1em; margin: 6px 0 0; }
+.err-inline.info { color: var(--mute); }
+.ver { color: var(--mute); font-size: 12px; margin: 8px 0 0; }
 
 /* komunikaty */
 .toasts { position: fixed; left: 0; right: 0; bottom: calc(86px + env(safe-area-inset-bottom)); z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; padding: 0 14px; }
@@ -223,6 +225,7 @@ table.codes td:first-child { font-weight: 700; width: 52px; }
       <button class="btn" id="btnDemo">Tryb demo</button>
     </div>
     <p class="err-inline" id="connectErr" role="status"></p>
+    <p class="ver" id="appVer"></p>
   </section>
 
   <!-- ================= STEROWANIE ================= -->
@@ -463,6 +466,12 @@ function toast(msg, kind = '') {
   $('toasts').appendChild(t);
   setTimeout(() => t.remove(), kind === 'e' ? 6000 : 3500);
 }
+// wersja strony (widoczna pod przyciskiem „Połącz”), pozwala sprawdzić, czy telefon nie trzyma starej kopii
+const APP_VER = '1.1';
+$('appVer').textContent = 'Wersja strony ' + APP_VER;
+// błędy skryptu pokazywane na ekranie zamiast cichego zatrzymania
+window.addEventListener('error', e => toast('Błąd strony: ' + e.message, 'e'));
+window.addEventListener('unhandledrejection', e => toast('Błąd strony: ' + (e.reason && e.reason.message || e.reason), 'e'));
 
 // ====================================================================
 //  Zegar
@@ -635,20 +644,36 @@ async function bleSetup() {
   await readCfg();
   await send('LOGS');
 }
+// komunikat pod przyciskiem „Połącz”: info = szary, w przeciwnym razie czerwony
+function connMsg(text, info = false) { const el = $('connectErr'); el.textContent = text; el.classList.toggle('info', info); }
+
+// v1.1: każdy wynik kliknięcia „Połącz” daje widoczny komunikat (wcześniej NotFoundError był pomijany)
 async function bleConnect() {
-  $('connectErr').textContent = '';
   if (!navigator.bluetooth) {
-    $('connectErr').textContent = 'Ta przeglądarka nie obsługuje Bluetooth. Użyj Chrome na Androidzie lub komputerze albo Bluefy na iPhonie.';
+    connMsg('Ta przeglądarka nie obsługuje Bluetooth. Na iPhonie użyj Bluefy, na komputerze Chrome lub Edge.');
     return;
   }
+  connMsg('Otwieram listę urządzeń… Wybierz „Hamulec”.', true);
   try {
     ble.device = await navigator.bluetooth.requestDevice({ filters: [{ services: [UUID.svc] }] });
-  } catch (e) { if (e.name !== 'NotFoundError') $('connectErr').textContent = e.message; return; }
+  } catch (e) {
+    const m = String(e && e.message || '');
+    if (e && e.name === 'NotFoundError' && /cancel/i.test(m)) connMsg('Nie wybrano urządzenia. Jeśli „Hamulec” nie było na liście, rozłącz go w nRF Connect, sprawdź antenę i zasilanie ESP.');
+    else if (e && e.name === 'NotFoundError') {
+      let avail = null;
+      try { if (navigator.bluetooth.getAvailability) avail = await navigator.bluetooth.getAvailability(); } catch {}
+      connMsg('Bluetooth niedostępny dla przeglądarki' + (avail === false ? ' (wyłączony lub brak zgody)' : '') +
+        '. Włącz Bluetooth i sprawdź, czy przeglądarka ma na niego zgodę w ustawieniach systemu. Szczegóły: ' + m);
+    }
+    else connMsg('Błąd Bluetooth (' + (e && e.name) + '): ' + m);
+    return;
+  }
   ble.manual = false; ble.retries = 0;
   ble.device.addEventListener('gattserverdisconnected', onBleDisconnected);
   setLink('connecting');
-  try { await bleSetup(); setLink('on'); addLog(200); }
-  catch (e) { setLink('off'); addLog(203, 0); $('connectErr').textContent = 'Nie udało się połączyć: ' + e.message + '. Sprawdź, czy urządzenie jest włączone.'; }
+  connMsg('Łączę z „' + (ble.device.name || 'Hamulec') + '”…', true);
+  try { await bleSetup(); setLink('on'); addLog(200); connMsg(''); }
+  catch (e) { setLink('off'); addLog(203, 0); connMsg('Nie udało się połączyć: ' + (e && e.message) + '. Sprawdź, czy urządzenie jest włączone i nie jest połączone z innym telefonem (np. w nRF Connect).'); }
 }
 function onBleDisconnected() {
   if (st.link === 'demo') return;

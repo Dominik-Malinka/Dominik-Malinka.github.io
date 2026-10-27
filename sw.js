@@ -1,6 +1,6 @@
 // Service worker: zapisuje stronę w pamięci telefonu, żeby działała bez internetu.
 // Po każdej zmianie plików strony zwiększ numer wersji (np. hamulec-v3).
-const CACHE = 'hamulec-v2';
+const CACHE = 'hamulec-v3';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', e => {
