@@ -467,7 +467,7 @@ function toast(msg, kind = '') {
   setTimeout(() => t.remove(), kind === 'e' ? 6000 : 3500);
 }
 // wersja strony (widoczna pod przyciskiem „Połącz”), pozwala sprawdzić, czy telefon nie trzyma starej kopii
-const APP_VER = '1.1';
+const APP_VER = '1.2';
 $('appVer').textContent = 'Wersja strony ' + APP_VER;
 // błędy skryptu pokazywane na ekranie zamiast cichego zatrzymania
 window.addEventListener('error', e => toast('Błąd strony: ' + e.message, 'e'));
@@ -1196,8 +1196,9 @@ $('btnLogCsv').addEventListener('click', () => {
 let installEvt = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('btnInstall').hidden = false; });
 $('btnInstall').addEventListener('click', async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('btnInstall').hidden = true; });
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready)
+if ('serviceWorker' in navigator && window.isSecureContext && location.protocol !== 'file:') {
+  // updateViaCache: 'none' – przeglądarka zawsze sprawdza na serwerze, czy jest nowszy sw.js
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => { r.update().catch(() => {}); return navigator.serviceWorker.ready; })
     .then(() => { $('offlineTxt').textContent = 'Strona zapisana w telefonie – działa bez internetu.'; })
     .catch(() => { $('offlineTxt').textContent = 'Nie udało się zapisać strony do pracy offline.'; });
 } else {
