@@ -1,0 +1,1186 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hamulec</title>
+<meta name="description" content="Sterowanie hamulcem kołowrotka przez Bluetooth">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#0f262a">
+<style>
+:root {
+  --bg: #e8eeec; --surface: #ffffff; --surface-2: #f2f6f5; --ink: #0f262a; --mute: #536b70;
+  --line: #cbd8d5; --track: #d7e2df; --accent: #ff6a2b; --on-accent: #1f0d04; --accent-ink: #b93a08;
+  --ok: #0d7660; --warn: #9a5a00; --err: #c0281b; --err-bg: #fbe6e3; --warn-bg: #fdf0d9; --ok-bg: #dff2ec;
+  --radius: 16px; color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #061417; --surface: #0d2125; --surface-2: #12292e; --ink: #e2edeb; --mute: #8fa8ac;
+    --line: #213a3f; --track: #1b3236; --accent: #ff7d45; --on-accent: #1f0d04; --accent-ink: #ff9b6e;
+    --ok: #3cc4a4; --warn: #f0b44c; --err: #ff6b5e; --err-bg: #3a1714; --warn-bg: #352610; --ok-bg: #0f3229;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+}
+button, input, select { font: inherit; color: inherit; }
+.num { font-variant-numeric: tabular-nums; }
+.wrap { max-width: 620px; margin: 0 auto; padding: 0 14px; }
+
+/* nagłówek */
+.top { position: sticky; top: 0; z-index: 20; background: var(--bg); border-bottom: 1px solid var(--line); padding-top: env(safe-area-inset-top); }
+.top .wrap { display: flex; align-items: center; gap: 12px; min-height: 60px; }
+.status { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+.dot { width: 12px; height: 12px; border-radius: 50%; background: var(--mute); flex: none; }
+.dot.on { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 22%, transparent); }
+.dot.wait { background: var(--warn); }
+.dot.demo { background: var(--accent); }
+.status div { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.status strong { font-size: 15px; }
+.status small { color: var(--mute); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clock { text-align: right; line-height: 1.15; }
+.clock b { display: block; font-size: 20px; font-weight: 600; }
+.clock span { font-size: 12.5px; color: var(--mute); }
+
+nav.tabs { display: flex; gap: 4px; padding: 0 0 8px; }
+nav.tabs button {
+  flex: 1; border: 0; background: transparent; padding: 9px 4px; border-radius: 10px;
+  font-size: 14.5px; font-weight: 600; color: var(--mute); cursor: pointer;
+}
+nav.tabs button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+nav.tabs .badge { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--err); color: #fff; font-size: 11.5px; line-height: 18px; }
+nav.tabs .badge[hidden] { display: none; }
+
+/* karty */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin: 12px 0; }
+.card h2 { margin: 0 0 12px; font-size: 16px; font-weight: 650; }
+.card h3 { margin: 18px 0 8px; font-size: 14.5px; font-weight: 650; }
+.hint { color: var(--mute); font-size: 13.5px; margin: 6px 0 0; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.row.between { justify-content: space-between; }
+.grow { flex: 1; }
+
+/* przyciski */
+.btn {
+  border: 1px solid var(--line); background: var(--surface-2); border-radius: 12px; padding: 11px 16px;
+  font-weight: 600; cursor: pointer; min-height: 46px; touch-action: manipulation;
+}
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.danger { background: var(--err); border-color: var(--err); color: #fff; }
+.btn.small { min-height: 38px; padding: 7px 12px; font-size: 14px; }
+.btn:focus-visible, nav.tabs button:focus-visible, .seg button:focus-visible, .mode button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+
+/* połączenie */
+.connect { text-align: left; }
+.connect p { margin: 0 0 14px; color: var(--mute); }
+.connect .row .btn { flex: 1; }
+
+/* odczyt siły */
+.readout { display: flex; align-items: baseline; gap: 8px; }
+.readout .val { font-size: clamp(64px, 22vw, 104px); font-weight: 700; letter-spacing: -0.03em; line-height: 1; }
+.readout .unit { font-size: 24px; color: var(--mute); font-weight: 600; }
+.pct { margin-top: 6px; color: var(--mute); font-size: 15px; }
+.pct b { color: var(--ink); }
+.gauge { position: relative; height: 22px; margin: 16px 0 6px; border-radius: 11px; background: var(--track); overflow: hidden; }
+.gauge .danger { position: absolute; top: 0; bottom: 0; right: 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--err) 35%, transparent) 0 6px, transparent 6px 12px); }
+.gauge .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--ok); border-radius: 11px; transition: width .12s linear; }
+.gauge .fill.hot { background: var(--warn); }
+.gauge .fill.over { background: var(--err); }
+.gauge .tmark { position: absolute; top: -2px; bottom: -2px; width: 4px; margin-left: -2px; background: var(--accent); border-radius: 2px; display: none; }
+.gscale { display: flex; justify-content: space-between; font-size: 12px; color: var(--mute); }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+.stats div { background: var(--surface-2); border-radius: 12px; padding: 8px 10px; }
+.stats small { display: block; color: var(--mute); font-size: 12.5px; }
+.stats b { font-size: 18px; }
+.stats button { all: unset; cursor: pointer; color: var(--accent-ink); font-size: 12.5px; font-weight: 600; }
+
+/* przełącznik trybu */
+.mode { position: relative; display: grid; grid-template-columns: 1fr 1fr; background: var(--track); border-radius: 14px; padding: 4px; }
+.mode .thumb { position: absolute; top: 4px; bottom: 4px; left: 4px; width: calc(50% - 4px); background: var(--surface); border-radius: 11px; box-shadow: 0 1px 2px rgba(0,0,0,.12); transition: transform .22s ease; }
+.mode[data-mode="auto"] .thumb { transform: translateX(100%); background: var(--accent); }
+.mode button { position: relative; z-index: 1; border: 0; background: transparent; padding: 14px 8px; font-weight: 650; font-size: 16px; border-radius: 11px; cursor: pointer; color: var(--mute); }
+.mode button[aria-checked="true"] { color: var(--ink); }
+.mode[data-mode="auto"] button[aria-checked="true"] { color: var(--on-accent); }
+.mode.locked { opacity: .5; pointer-events: none; }
+
+/* sterowanie ręczne */
+.jog { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.jog button {
+  min-height: 96px; border-radius: 16px; border: 2px solid var(--line); background: var(--surface-2);
+  font-size: 18px; font-weight: 700; cursor: pointer; user-select: none; -webkit-user-select: none;
+  touch-action: none; -webkit-touch-callout: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+}
+.jog button small { font-size: 12.5px; font-weight: 500; color: var(--mute); }
+.jog button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
+.jog button:disabled { opacity: .45; }
+.slider { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; margin-top: 14px; }
+.slider label { font-size: 14px; color: var(--mute); }
+input[type="range"] { width: 100%; accent-color: var(--accent); height: 32px; }
+.posbar { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; margin-top: 6px; }
+.posbar i { display: block; height: 100%; width: 0; background: var(--ink); opacity: .55; }
+
+/* auto */
+.target { display: grid; grid-template-columns: 52px 1fr 52px; gap: 10px; align-items: center; margin-top: 10px; }
+.target .btn { min-height: 52px; font-size: 22px; padding: 0; }
+.target output { text-align: center; font-size: 34px; font-weight: 700; }
+.regstate { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-weight: 600; }
+.regstate.loosen { background: var(--warn-bg); color: var(--warn); }
+.regstate.over { background: var(--err-bg); color: var(--err); }
+.regstate.ret { background: var(--ok-bg); color: var(--ok); }
+
+/* dolny pasek */
+.bottom { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
+.bottom .wrap { display: flex; align-items: center; gap: 12px; min-height: 76px; }
+.chips { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--mute); min-width: 0; }
+.chips b { color: var(--ink); }
+.chips .bad { color: var(--err); font-weight: 600; }
+.stop { min-width: 132px; min-height: 56px; font-size: 20px; letter-spacing: .04em; }
+
+/* wykres */
+.seg { display: inline-flex; background: var(--track); border-radius: 10px; padding: 3px; }
+.seg button { border: 0; background: transparent; padding: 7px 11px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--mute); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); }
+canvas#chart { width: 100%; height: 300px; display: block; margin-top: 12px; touch-action: pan-y; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--mute); margin-top: 6px; }
+.legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle; margin-right: 5px; border-radius: 2px; }
+
+/* logi */
+.loglist { list-style: none; margin: 12px 0 0; padding: 0; max-height: 60vh; overflow: auto; border-top: 1px solid var(--line); }
+.loglist li { display: grid; grid-template-columns: 64px 46px 1fr; gap: 8px; padding: 9px 2px; border-bottom: 1px solid var(--line); font-size: 14px; align-items: start; }
+.loglist time { color: var(--mute); }
+.loglist .code { font-weight: 700; border-radius: 6px; text-align: center; padding: 1px 0; font-size: 12.5px; }
+.lv-i .code { background: var(--surface-2); color: var(--mute); }
+.lv-w .code { background: var(--warn-bg); color: var(--warn); }
+.lv-e .code { background: var(--err-bg); color: var(--err); }
+.lv-a .code { background: var(--ok-bg); color: var(--ok); }
+.loglist small { display: block; color: var(--mute); }
+.empty { color: var(--mute); padding: 18px 2px; }
+details.codes summary { cursor: pointer; font-weight: 600; }
+table.codes { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 8px; }
+table.codes td { border-top: 1px solid var(--line); padding: 6px 4px; vertical-align: top; }
+table.codes td:first-child { font-weight: 700; width: 52px; }
+
+/* ustawienia */
+.setrow { display: grid; grid-template-columns: 1fr 112px auto; gap: 8px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.setrow:first-of-type { border-top: 0; }
+.setrow label { font-weight: 600; font-size: 15px; }
+.setrow label small { display: block; font-weight: 400; color: var(--mute); font-size: 13px; }
+.setrow input { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); text-align: right; }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+.toggle:first-of-type { border-top: 0; }
+.toggle span small { display: block; color: var(--mute); font-size: 13px; }
+.toggle input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-size: 14px; }
+.kv dt { color: var(--mute); }
+.kv dd { margin: 0; text-align: right; }
+.err-inline { color: var(--err); font-size: 13px; min-height: 1em; margin: 6px 0 0; }
+
+/* komunikaty */
+.toasts { position: fixed; left: 0; right: 0; bottom: calc(86px + env(safe-area-inset-bottom)); z-index: 30; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; padding: 0 14px; }
+.toast { pointer-events: auto; max-width: 590px; width: 100%; background: var(--ink); color: var(--bg); border-radius: 12px; padding: 11px 14px; font-size: 14.5px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+.toast.e { background: var(--err); color: #fff; }
+.toast.w { background: var(--warn); color: #fff; }
+[hidden] { display: none !important; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <div><strong id="stTitle">Rozłączono</strong><small id="stSub">Hamulec kołowrotka</small></div>
+    </div>
+    <div class="clock num" aria-live="off"><b id="clkTime">--:--:--</b><span id="clkDate"></span></div>
+  </div>
+  <div class="wrap">
+    <nav class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="ctl">Sterowanie</button>
+      <button role="tab" aria-selected="false" data-tab="chart">Wykres</button>
+      <button role="tab" aria-selected="false" data-tab="log">Logi<span class="badge" id="logBadge" hidden>0</span></button>
+      <button role="tab" aria-selected="false" data-tab="set">Ustawienia</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="card connect" id="connectCard">
+    <h2>Połącz z hamulcem</h2>
+    <p id="connectMsg">Włącz urządzenie i Bluetooth w telefonie. Strona działa bez internetu, jeśli była wcześniej otwarta.</p>
+    <div class="row">
+      <button class="btn primary" id="btnConnect">Połącz</button>
+      <button class="btn" id="btnDemo">Tryb demo</button>
+    </div>
+    <p class="err-inline" id="connectErr" role="status"></p>
+  </section>
+
+  <!-- ================= STEROWANIE ================= -->
+  <section id="tab-ctl" role="tabpanel">
+    <div class="card">
+      <div class="readout num"><span class="val" id="fVal">–</span><span class="unit" id="fUnit">kg</span></div>
+      <div class="pct num"><b id="fPct">–</b> siły maksymalnej (<span id="fMaxTxt">–</span>)</div>
+      <div class="gauge" aria-hidden="true"><div class="danger" id="gDanger"></div><div class="fill" id="gFill"></div><div class="tmark" id="gTarget"></div></div>
+      <div class="gscale num"><span>0</span><span id="gMid"></span><span id="gEnd"></span></div>
+      <div class="stats num">
+        <div><small>Szczyt</small><b id="sPeak">–</b> <button id="btnPeakReset" aria-label="Wyzeruj szczyt">zeruj</button></div>
+        <div><small>Czas holu</small><b id="sHold">0:00</b></div>
+        <div><small>Silnik</small><b id="sDuty">0%</b></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tryb pracy</h2>
+      <div class="mode" id="modeSwitch" data-mode="man" role="radiogroup" aria-label="Tryb pracy">
+        <span class="thumb"></span>
+        <button role="radio" aria-checked="true" data-mode="man">Ręczny</button>
+        <button role="radio" aria-checked="false" data-mode="auto">Automatyczny</button>
+      </div>
+      <p class="err-inline" id="modeErr" role="status"></p>
+
+      <div id="manPanel">
+        <div class="jog">
+          <button id="jogMinus" aria-label="Luzuj hamulec (przytrzymaj)">Luzuj<small>przytrzymaj</small></button>
+          <button id="jogPlus" aria-label="Dokręć hamulec (przytrzymaj)">Dokręć<small>przytrzymaj</small></button>
+        </div>
+        <div class="slider">
+          <label for="jogSpeed">Prędkość</label>
+          <input type="range" id="jogSpeed" min="25" max="100" step="5" value="60">
+          <output class="num" id="jogSpeedOut">60%</output>
+        </div>
+        <div class="row between" style="margin-top:12px"><span class="hint" style="margin:0">Pozycja pokrętła</span><b class="num" id="posTxt">–</b></div>
+        <div class="posbar"><i id="posBar"></i></div>
+      </div>
+
+      <div id="autoPanel" hidden>
+        <p class="hint">Siła zadana. Hamulec jest luzowany, gdy siła na żyłce przekroczy cel, i wraca do ustawienia z chwili włączenia trybu, gdy żyłka zelżeje.</p>
+        <div class="target">
+          <button class="btn" id="tgtMinus" aria-label="Zmniejsz cel">−</button>
+          <output class="num" id="tgtOut">–</output>
+          <button class="btn" id="tgtPlus" aria-label="Zwiększ cel">+</button>
+        </div>
+        <input type="range" id="tgtRange" min="0.1" max="4" step="0.05" value="2" aria-label="Siła zadana">
+        <div class="regstate" id="regState">–</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WYKRES ================= -->
+  <section id="tab-chart" role="tabpanel" hidden>
+    <div class="card">
+      <div class="row between">
+        <div class="seg" id="winSeg">
+          <button aria-pressed="true" data-win="30">30 s</button>
+          <button aria-pressed="false" data-win="120">2 min</button>
+          <button aria-pressed="false" data-win="600">10 min</button>
+        </div>
+        <div class="row">
+          <button class="btn small" id="btnPause">Pauza</button>
+          <button class="btn small" id="btnCsv">CSV</button>
+        </div>
+      </div>
+      <canvas id="chart" aria-label="Wykres siły w czasie"></canvas>
+      <div class="legend">
+        <span><i style="background:var(--ok)"></i>Siła na żyłce</span>
+        <span><i style="background:var(--accent)"></i>Cel (tryb auto)</span>
+        <span><i style="background:var(--err)"></i>Siła maksymalna</span>
+      </div>
+      <div class="stats num" style="margin-top:14px">
+        <div><small>Maks. w oknie</small><b id="cMax">–</b></div>
+        <div><small>Średnia w oknie</small><b id="cAvg">–</b></div>
+        <div><small>Próbek w sesji</small><b id="cN">0</b></div>
+      </div>
+      <p class="hint">Dane sesji są w pamięci strony (do 1 godziny). Eksport CSV zapisuje całą sesję.</p>
+      <button class="btn small" id="btnClearData" style="margin-top:8px">Wyczyść dane sesji</button>
+    </div>
+  </section>
+
+  <!-- ================= LOGI ================= -->
+  <section id="tab-log" role="tabpanel" hidden>
+    <div class="card">
+      <div class="row between">
+        <div class="seg" id="logSeg">
+          <button aria-pressed="true" data-f="all">Wszystkie</button>
+          <button aria-pressed="false" data-f="w">Ostrzeżenia</button>
+          <button aria-pressed="false" data-f="e">Błędy</button>
+        </div>
+        <div class="row">
+          <button class="btn small" id="btnLogCsv">Eksport</button>
+          <button class="btn small" id="btnLogClear">Wyczyść</button>
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px" id="activeErrRow" hidden>
+        <span class="grow" style="color:var(--err);font-weight:600" id="activeErrTxt"></span>
+        <button class="btn small" id="btnClrErr">Kasuj błąd</button>
+      </div>
+      <ul class="loglist" id="logList"></ul>
+    </div>
+    <div class="card">
+      <details class="codes">
+        <summary>Kody zdarzeń i błędów</summary>
+        <p class="hint">I – informacja, W – ostrzeżenie, E – błąd urządzenia, A – zdarzenie aplikacji.</p>
+        <table class="codes" id="codeTable"></table>
+      </details>
+    </div>
+  </section>
+
+  <!-- ================= USTAWIENIA ================= -->
+  <section id="tab-set" role="tabpanel" hidden>
+    <div class="card">
+      <h2>Pomiar siły</h2>
+      <dl class="kv num">
+        <dt>Odczyt surowy HX711</dt><dd id="kvRaw">–</dd>
+        <dt>Próbki na sekundę</dt><dd id="kvSps">–</dd>
+        <dt>Współczynnik kalibracji</dt><dd id="kvScale">–</dd>
+        <dt>Offset (zero)</dt><dd id="kvOff">–</dd>
+      </dl>
+      <h3>1. Taruj przy luźnej żyłce</h3>
+      <button class="btn" data-cmd="TARE" data-reload="900">Taruj</button>
+      <h3>2. Zawieś ciężarek o znanej masie na żyłce</h3>
+      <div class="row">
+        <input id="calMass" type="number" inputmode="decimal" step="0.01" min="0.05" max="50" value="1.00" style="width:110px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);text-align:right"> <span>kg</span>
+        <button class="btn primary" id="btnCal">Kalibruj</button>
+      </div>
+      <p class="hint">Masa w kilogramach, niezależnie od wybranych jednostek. Uśrednianie trwa ok. 0,5 s.</p>
+      <p class="err-inline" id="calErr"></p>
+    </div>
+
+    <div class="card">
+      <h2>Położenie pokrętła</h2>
+      <dl class="kv num">
+        <dt>Pozycja</dt><dd id="kvPos">–</dd>
+        <dt>Limit górny</dt><dd id="kvPmax">–</dd>
+        <dt>Zero ustalone</dt><dd id="kvZk">–</dd>
+      </dl>
+      <div class="row" style="margin-top:12px">
+        <button class="btn small" data-cmd="ZERO" data-reload="400" data-confirm="Ustawić obecną pozycję jako zero (pełny luz)?">Zero tutaj</button>
+        <button class="btn small" data-cmd="PMAX" data-reload="400" data-confirm="Ustawić obecną pozycję jako maksymalne dokręcenie?">Maksimum tutaj</button>
+        <button class="btn small" data-cmd="PCLR" data-reload="400" data-confirm="Usunąć limity pozycji?">Usuń limity</button>
+        <button class="btn small" data-cmd="HOME" data-reload="400" data-confirm="Bazowanie odkręci hamulec aż do oporu. Kontynuować?">Bazowanie</button>
+      </div>
+      <p class="hint">Zero to pełny luz, maksimum to najmocniejsze bezpieczne dokręcenie. Bazowanie działa tylko, gdy pokrętło ma mechaniczny ogranicznik.</p>
+    </div>
+
+    <div class="card">
+      <h2>Siły i regulator</h2>
+      <div id="numSettings"></div>
+    </div>
+
+    <div class="card">
+      <h2>Kierunki i bateria</h2>
+      <div class="row">
+        <button class="btn small" data-cmd="MINV" data-reload="400">Odwróć kierunek silnika</button>
+        <button class="btn small" data-cmd="EINV" data-reload="400">Odwróć enkoder</button>
+      </div>
+      <p class="hint">Przy „Dokręć” pozycja powinna rosnąć. Jeśli silnik kręci w złą stronę, odwróć silnik; jeśli pozycja maleje, odwróć enkoder.</p>
+      <h3>Korekta pomiaru baterii</h3>
+      <div class="row">
+        <input id="batMeas" type="number" inputmode="decimal" step="0.01" min="2.5" max="4.5" placeholder="np. 3,95" style="width:110px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);text-align:right"> <span>V</span>
+        <button class="btn" id="btnBcal">Zapisz</button>
+      </div>
+      <p class="hint">Zmierz napięcie akumulatora multimetrem i wpisz wynik.</p>
+    </div>
+
+    <div class="card">
+      <h2>Aplikacja</h2>
+      <label class="toggle"><span>Jednostki w niutonach<small>Domyślnie kilogramy siły (1 kg ≈ 9,81 N)</small></span><input type="checkbox" id="optN"></label>
+      <label class="toggle"><span>Ekran zawsze włączony<small>Ekran nie gaśnie podczas holu</small></span><input type="checkbox" id="optWake"></label>
+      <label class="toggle"><span>Alarm przy 90% siły maks.<small>Wibracja i krótki dźwięk</small></span><input type="checkbox" id="optAlarm" checked></label>
+      <label class="toggle"><span>Automatyczne ponowne łączenie<small>Po zerwaniu połączenia</small></span><input type="checkbox" id="optRecon" checked></label>
+      <div class="row" style="margin-top:12px">
+        <button class="btn small" id="btnInstall" hidden>Zainstaluj aplikację</button>
+        <span class="hint" id="offlineTxt" style="margin:0"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Urządzenie</h2>
+      <dl class="kv num">
+        <dt>Wersja firmware</dt><dd id="kvFw">–</dd>
+        <dt>Napięcie baterii</dt><dd id="kvBat">–</dd>
+        <dt>Czas pracy urządzenia</dt><dd id="kvUp">–</dd>
+      </dl>
+      <div class="row" style="margin-top:12px">
+        <button class="btn small" id="btnDisconnect">Rozłącz</button>
+        <button class="btn small" data-cmd="RST" data-confirm="Uruchomić urządzenie ponownie?">Restart urządzenia</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<footer class="bottom">
+  <div class="wrap">
+    <div class="chips num">
+      <span>Bateria <b id="bBat">–</b></span>
+      <span>Czujnik <b id="bHx">–</b></span>
+    </div>
+    <button class="btn danger stop" id="btnStop">STOP</button>
+  </div>
+</footer>
+
+<script>
+'use strict';
+// ====================================================================
+//  Narzędzia
+// ====================================================================
+const $ = id => document.getElementById(id);
+const G = 9.81;
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('hamulec.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('hamulec.' + k, JSON.stringify(v)); } catch {} }
+};
+const prefs = Object.assign({ units: 'kg', wake: false, alarm: true, recon: true, win: 30 }, store.get('prefs', {}));
+const savePrefs = () => store.set('prefs', prefs);
+const nf = (v, d) => v.toLocaleString('pl-PL', { minimumFractionDigits: d, maximumFractionDigits: d });
+const toDisp = kg => prefs.units === 'N' ? kg * G : kg;
+const fromDisp = v => prefs.units === 'N' ? v / G : v;
+const unit = () => prefs.units === 'N' ? 'N' : 'kg';
+const fmtF = kg => nf(toDisp(kg), prefs.units === 'N' ? 1 : 2) + ' ' + unit();
+const fmtDur = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60;
+  return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(r).padStart(2, '0'); };
+const fmtTime = w => new Date(w).toLocaleTimeString('pl-PL');
+function download(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+  a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function toast(msg, kind = '') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + kind; t.textContent = msg;
+  $('toasts').appendChild(t);
+  setTimeout(() => t.remove(), kind === 'e' ? 6000 : 3500);
+}
+
+// ====================================================================
+//  Zegar
+// ====================================================================
+function tickClock() {
+  const d = new Date();
+  $('clkTime').textContent = d.toLocaleTimeString('pl-PL');
+  $('clkDate').textContent = d.toLocaleDateString('pl-PL', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+tickClock(); setInterval(tickClock, 1000);
+
+// ====================================================================
+//  Kody zdarzeń (zgodne z firmware)
+// ====================================================================
+const RESET = { 0: 'nieznana', 1: 'włączenie zasilania', 2: 'przycisk/pin EN', 3: 'restart programowy', 4: 'błąd programu',
+  5: 'watchdog przerwań', 6: 'watchdog zadań', 7: 'watchdog', 8: 'wybudzenie z uśpienia', 9: 'spadek napięcia (brownout)', 10: 'SDIO' };
+const WHY_MAN = { 0: 'na żądanie', 1: 'zatrzymanie silnika lub błąd', 2: 'krytycznie niski stan baterii', 3: 'utrata pomiaru siły' };
+const SET_NAME = { 1: 'siła zadana', 2: 'siła maksymalna', 3: 'próg napiętej żyłki', 4: 'Kp', 5: 'Ki', 6: 'maks. wypełnienie PWM',
+  7: 'korekta pomiaru baterii', 8: 'kierunek silnika', 9: 'kierunek enkodera' };
+const BLOCK = { 0: 'tryb ręczny wymagany', 1: 'brak pomiaru siły', 2: 'krytycznie niski stan baterii' };
+const V = v => (v / 1000).toFixed(2).replace('.', ',') + ' V';
+const CODES = {
+  1: ['Uruchomienie urządzenia', v => 'przyczyna: ' + (RESET[v] ?? v)],
+  2: ['Telefon połączony z urządzeniem'],
+  3: ['Telefon rozłączony', v => 'kod BLE ' + v],
+  4: ['Tryb ręczny', v => WHY_MAN[v] ?? ''],
+  5: ['Tryb automatyczny', v => 'cel ' + fmtF(v / 100)],
+  6: ['Tarowanie zakończone', v => 'offset ' + v],
+  7: ['Kalibracja zakończona', v => 'współczynnik ' + v + ' jedn./kg'],
+  8: ['Ustawiono zero pozycji'],
+  9: ['Ustawiono limit górny pozycji', v => v + ' imp.'],
+  10: ['Usunięto limity pozycji'],
+  11: ['Bazowanie: odkręcanie do oporu'],
+  12: ['Bazowanie zakończone, pozycja = 0'],
+  13: ['Odtworzono pozycję z pamięci', v => v + ' imp.'],
+  14: ['Zmieniono ustawienie', v => SET_NAME[v] ?? v],
+  15: ['Zatrzymano przyciskiem STOP'],
+  16: ['Czujnik siły znów odpowiada'],
+  17: ['Skasowano aktywny błąd'],
+  40: ['Niski stan baterii', V],
+  41: ['Przeciążenie: siła powyżej maksymalnej, hamulec luzowany', v => fmtF(v / 100)],
+  42: ['Dolny limit pozycji (pełny luz)', v => v + ' imp.'],
+  43: ['Górny limit pozycji (maks. dokręcenie)', v => v + ' imp.'],
+  44: ['Tryb automatyczny bez limitów pozycji'],
+  45: ['HX711 pracuje wolno – podłącz RATE do VCC (80 próbek/s)', v => v + ' próbek/s'],
+  46: ['Ruch ręczny przerwany: brak sygnału z telefonu'],
+  47: ['Nieznana komenda'],
+  48: ['Niepoprawna wartość komendy', v => nf(v / 100, 2)],
+  49: ['Najpierw ustaw zero pozycji'],
+  50: ['Komenda zablokowana', v => BLOCK[v] ?? ''],
+  80: ['Brak danych z HX711 – sprawdź przewody DT, SCK i zasilanie'],
+  81: ['HX711 w nasyceniu – sprawdź podłączenie czujnika', v => 'odczyt ' + v],
+  82: ['Tryb automatyczny niedostępny: czujnik nieskalibrowany'],
+  83: ['Silnik zablokowany: brak impulsów enkodera', v => 'pozycja ' + v],
+  84: ['Enkoder liczy w przeciwną stronę – użyj „Odwróć enkoder”', v => 'zmiana ' + v + ' imp.'],
+  85: ['Krytycznie niski stan baterii – napęd wyłączony', V],
+  86: ['Bazowanie nieudane: brak oporu w ciągu 60 s'],
+  87: ['Kalibracja nieudana: za mała zmiana sygnału'],
+  200: ['Połączono przez Bluetooth'],
+  201: ['Połączenie zerwane'],
+  202: ['Ponowne łączenie', v => 'próba ' + v],
+  203: ['Nie udało się połączyć', v => v],
+  204: ['Błąd wysyłania komendy', v => v],
+  205: ['Brak danych z urządzenia od 2 s'],
+  206: ['Tryb demo (symulacja)'],
+  207: ['Rozłączono na żądanie'],
+};
+const APP_LEVEL = { 201: 'w', 203: 'e', 204: 'w', 205: 'w' };
+const level = c => c >= 200 ? (APP_LEVEL[c] || 'a') : c >= 80 ? 'e' : c >= 40 ? 'w' : 'i';
+const codeLabel = c => (c >= 200 ? 'A' : c >= 80 ? 'E' : c >= 40 ? 'W' : 'I') + c;
+const describe = (c, v) => { const d = CODES[c]; if (!d) return ['Nieznany kod', String(v)]; return [d[0], d[1] ? d[1](v) : '']; };
+
+$('codeTable').innerHTML = Object.keys(CODES).map(c =>
+  `<tr><td>${codeLabel(+c)}</td><td>${CODES[c][0]}</td></tr>`).join('');
+
+// ====================================================================
+//  Dziennik
+// ====================================================================
+let logs = store.get('logs', []);
+let logFilter = 'all', unseenErr = 0;
+function addLog(code, val = 0, w = Date.now(), quiet = false) {
+  logs.push({ w, c: code, v: val });
+  if (logs.length > 400) logs = logs.slice(-400);
+  store.set('logs', logs);
+  const lv = level(code);
+  if (!quiet && (lv === 'e' || lv === 'w')) {
+    const [m, d] = describe(code, val);
+    toast(codeLabel(code) + ' · ' + m + (d ? ' (' + d + ')' : ''), lv);
+    if (lv === 'e' && currentTab !== 'log') { unseenErr++; renderBadge(); }
+  }
+  renderLogs();
+}
+function renderBadge() { $('logBadge').hidden = unseenErr === 0; $('logBadge').textContent = unseenErr; }
+function renderLogs() {
+  if (currentTab !== 'log') return;
+  const items = logs.filter(l => logFilter === 'all' || level(l.c) === logFilter).slice(-200).reverse();
+  $('logList').innerHTML = items.length ? items.map(l => {
+    const [m, d] = describe(l.c, l.v);
+    return `<li class="lv-${level(l.c)}"><time class="num">${fmtTime(l.w)}</time><span class="code">${codeLabel(l.c)}</span><span>${m}${d ? `<small>${d}</small>` : ''}</span></li>`;
+  }).join('') : '<li class="empty">Brak zdarzeń.</li>';
+}
+
+// ====================================================================
+//  Stan
+// ====================================================================
+const st = {
+  link: 'off',             // off | connecting | on | demo
+  tel: null, cfg: null, lastTelAt: 0, devOffset: 0, lastDevT: 0,
+  peak: 0, holdS: 0, telTimeoutLogged: false,
+};
+const samples = [];        // { w, f, tgt, pos, duty, bat, mode }
+const MAX_SAMPLES = 72000; // 1 h przy 20 Hz
+const REG_TXT = { 0: '–', 1: 'Czuwa: żyłka luźna', 2: 'Trzyma: siła w granicach celu', 3: 'Luzuje hamulec: siła powyżej celu',
+  4: 'Wraca do ustawienia bazowego', 5: 'Przeciążenie: luzowanie awaryjne' };
+const REG_CLS = { 3: 'loosen', 4: 'ret', 5: 'over' };
+
+function onTel(t) {
+  const now = Date.now();
+  if (st.tel && t.t + 1000 < st.lastDevT) addLog(1, 0, now, true);   // urządzenie uruchomione ponownie
+  const dtS = st.lastTelAt ? Math.min(0.5, (now - st.lastTelAt) / 1000) : 0;
+  st.lastDevT = t.t; st.devOffset = now - t.t; st.lastTelAt = now; st.telTimeoutLogged = false;
+  st.tel = t;
+  const cfg = st.cfg || {};
+  if (t.f > st.peak) st.peak = t.f;
+  if (cfg.thr !== undefined && t.f > cfg.thr) st.holdS += dtS;
+  samples.push({ w: now, f: t.f, tgt: t.mode === 1 ? cfg.tgt : null, pos: t.pos, duty: t.duty, bat: t.bat, mode: t.mode });
+  if (samples.length > MAX_SAMPLES) samples.splice(0, samples.length - MAX_SAMPLES);
+  alarmCheck(t);
+  scheduleRender();
+}
+function onDevLog(e) {
+  const w = st.lastTelAt ? st.devOffset + e.t : Date.now();
+  if (!seenSeq.has(e.seq)) { seenSeq.add(e.seq); addLog(e.code, e.val, w, Date.now() - w > 8000); }
+}
+let seenSeq = new Set();
+
+// ====================================================================
+//  Bluetooth (Web Bluetooth)
+// ====================================================================
+const UUID = {
+  svc: '6a4e0001-6c2b-4f5e-9a3d-1f0c2b7e9a10', tel: '6a4e0002-6c2b-4f5e-9a3d-1f0c2b7e9a10',
+  cmd: '6a4e0003-6c2b-4f5e-9a3d-1f0c2b7e9a10', cfg: '6a4e0004-6c2b-4f5e-9a3d-1f0c2b7e9a10',
+  log: '6a4e0005-6c2b-4f5e-9a3d-1f0c2b7e9a10'
+};
+const ble = { device: null, ch: {}, manual: false, retries: 0 };
+let gattQ = Promise.resolve(), gattBusy = 0;
+function gatt(fn) {                       // operacje GATT muszą iść po kolei
+  gattBusy++;
+  const p = gattQ.then(fn).finally(() => gattBusy--);
+  gattQ = p.catch(() => {});
+  return p;
+}
+function parseTel(dv) {
+  const m = dv.getUint8(12);
+  return { t: dv.getUint32(0, true), f: dv.getInt16(4, true) / 100, pos: dv.getInt32(6, true), bat: dv.getUint16(10, true) / 1000,
+    mode: m & 15, reg: m >> 4, flags: dv.getUint8(13), duty: dv.getInt8(14), err: dv.getUint8(15), raw: dv.getInt32(16, true) };
+}
+async function bleSetup() {
+  const srv = await ble.device.gatt.connect();
+  const svc = await srv.getPrimaryService(UUID.svc);
+  for (const k of ['tel', 'cmd', 'cfg', 'log']) ble.ch[k] = await svc.getCharacteristic(UUID[k]);
+  ble.ch.tel.addEventListener('characteristicvaluechanged', e => onTel(parseTel(e.target.value)));
+  ble.ch.log.addEventListener('characteristicvaluechanged', e => {
+    const dv = e.target.value;
+    onDevLog({ t: dv.getUint32(0, true), seq: dv.getUint16(4, true), code: dv.getUint8(6), val: dv.getInt32(8, true) });
+  });
+  await ble.ch.tel.startNotifications();
+  await ble.ch.log.startNotifications();
+  seenSeq = new Set();
+  await readCfg();
+  await send('LOGS');
+}
+async function bleConnect() {
+  $('connectErr').textContent = '';
+  if (!navigator.bluetooth) {
+    $('connectErr').textContent = 'Ta przeglądarka nie obsługuje Bluetooth. Użyj Chrome na Androidzie lub komputerze albo Bluefy na iPhonie.';
+    return;
+  }
+  try {
+    ble.device = await navigator.bluetooth.requestDevice({ filters: [{ services: [UUID.svc] }] });
+  } catch (e) { if (e.name !== 'NotFoundError') $('connectErr').textContent = e.message; return; }
+  ble.manual = false; ble.retries = 0;
+  ble.device.addEventListener('gattserverdisconnected', onBleDisconnected);
+  setLink('connecting');
+  try { await bleSetup(); setLink('on'); addLog(200); }
+  catch (e) { setLink('off'); addLog(203, 0); $('connectErr').textContent = 'Nie udało się połączyć: ' + e.message + '. Sprawdź, czy urządzenie jest włączone.'; }
+}
+function onBleDisconnected() {
+  if (st.link === 'demo') return;
+  if (ble.manual) { setLink('off'); addLog(207); return; }
+  addLog(201);
+  if (prefs.recon) reconnect(); else setLink('off');
+}
+async function reconnect() {
+  setLink('connecting');
+  while (!ble.manual && ble.retries < 15) {
+    ble.retries++;
+    addLog(202, ble.retries, Date.now(), true);
+    try { await bleSetup(); ble.retries = 0; setLink('on'); addLog(200); return; }
+    catch { await new Promise(r => setTimeout(r, 2000)); }
+  }
+  setLink('off');
+}
+function bleDisconnect() {
+  ble.manual = true;
+  if (ble.device && ble.device.gatt.connected) ble.device.gatt.disconnect(); else setLink('off');
+}
+async function readCfg() {
+  if (st.link === 'demo') { st.cfg = { ...sim.cfg }; renderCfg(); return; }
+  if (!ble.ch.cfg) return;
+  try {
+    const dv = await gatt(() => ble.ch.cfg.readValue());
+    st.cfg = JSON.parse(new TextDecoder().decode(dv));
+    renderCfg();
+  } catch (e) { console.warn('cfg', e); }
+}
+async function send(cmd, opts = {}) {
+  if (st.link === 'demo') { sim.cmd(cmd); return true; }
+  if (st.link !== 'on' && st.link !== 'connecting') return false;
+  if (opts.skipIfBusy && gattBusy > 0) return false;
+  const data = new TextEncoder().encode(cmd);
+  try {
+    await gatt(() => {
+      const c = ble.ch.cmd;
+      if (opts.fast && c.writeValueWithoutResponse) return c.writeValueWithoutResponse(data);
+      if (c.writeValueWithResponse) return c.writeValueWithResponse(data);
+      return c.writeValue(data);
+    });
+    return true;
+  } catch (e) { if (!opts.fast) addLog(204, 0); return false; }
+}
+function sendAndReload(cmd, ms = 400) { send(cmd).then(() => setTimeout(readCfg, ms)); }
+
+// brak telemetrii
+setInterval(() => {
+  if ((st.link === 'on') && st.lastTelAt && Date.now() - st.lastTelAt > 2000 && !st.telTimeoutLogged) {
+    st.telTimeoutLogged = true; addLog(205);
+  }
+}, 500);
+
+// ====================================================================
+//  Symulacja (tryb demo) – ta sama logika co w firmware
+// ====================================================================
+class Sim {
+  constructor() {
+    this.cfg = { fw: 'demo', off: 84213, scale: 21540, tgt: 2.0, fmax: 4.0, thr: 0.3, kp: 40, ki: 20, maxd: 80, pmax: 1500,
+      bcal: 1, minv: 0, einv: 0, sps: 80, base: 0, zk: 1 };
+    this.t0 = performance.now(); this.seq = 0;
+    this.pos = 700; this.mode = 0; this.jog = 0; this.lastJog = 0; this.integ = 0; this.reg = 0;
+    this.T = 0; this.fish = 0.1; this.fishTgt = 0.1; this.burstUntil = 0; this.bat = 4.08;
+    this.overload = false; this.err = 0; this.duty = 0; this.atMin = false; this.atMax = false;
+    this.base = 700; this.homeAt = 0;
+    this.log(1, 1); this.log(13, this.pos);
+    this.timer = setInterval(() => this.tick(), 50);
+  }
+  stop() { clearInterval(this.timer); }
+  ms() { return Math.round(performance.now() - this.t0); }
+  log(code, val = 0) { if (code >= 80) this.err = code; onDevLog({ t: this.ms(), seq: this.seq++ & 0xffff, code, val }); }
+  brake() { return 0.25 + Math.max(0, this.pos) / 1500 * 4.4; }   // siła poślizgu hamulca zależna od pozycji
+  auto(dt) {
+    const c = this.cfg, db = Math.max(0.05, 0.05 * c.tgt), e = this.T - c.tgt;
+    if (this.T > c.thr && e > db) {
+      this.integ = Math.min(Math.max(this.integ + e * dt, 0), 100 / Math.max(c.ki, 0.01));
+      this.reg = 3;
+      return -Math.min(Math.max(c.kp * e + c.ki * this.integ, 25), c.maxd);
+    }
+    this.integ = 0;
+    if (this.pos < this.base - 5 && (this.T < c.thr || e < -db)) { this.reg = 4; return 35; }
+    this.reg = this.T > c.thr ? 2 : 1; return 0;
+  }
+  tick() {
+    const c = this.cfg, dt = 0.05, now = this.ms();
+    // ryba: spokój przerywany odjazdami
+    if (now > this.burstUntil) {
+      if (Math.random() < 0.015) { this.burstUntil = now + 2500 + Math.random() * 6000; this.fishTgt = 1 + Math.random() * 4.2; }
+      else this.fishTgt = 0.15 + Math.random() * 0.35;
+    }
+    this.fish = Math.max(0, this.fish + (this.fishTgt - this.fish) * 0.07 + (Math.random() - 0.5) * 0.18);
+    const T = Math.min(this.fish, this.brake()) + (Math.random() - 0.5) * 0.03;
+    this.T += 0.5 * (T - this.T);
+
+    let duty = 0; this.reg = 0;
+    if (this.T > c.fmax) { if (!this.overload) { this.overload = true; this.log(41, Math.round(this.T * 100)); } }
+    else if (this.overload && this.T < 0.9 * c.fmax) this.overload = false;
+    if (this.mode === 0 && this.jog && now - this.lastJog > 600) { this.jog = 0; this.log(46); }
+
+    if (this.bat < 3.3) duty = 0;
+    else if (this.mode === 2) {
+      if (this.pos > -40) duty = -35;
+      else if (!this.homeAt) this.homeAt = now;
+      else if (now - this.homeAt > 300) { this.pos = 0; this.mode = 0; this.homeAt = 0; this.cfg.zk = 1; this.log(12); }
+    }
+    else if (this.overload) { duty = -c.maxd; this.reg = 5; }
+    else if (this.mode === 0) { duty = this.jog; if (duty > 0 && this.T > 0.9 * c.fmax) duty = 0; }
+    else duty = this.auto(dt);
+
+    if (this.mode !== 2 && c.pmax > 0) {
+      if (duty > 0 && this.pos >= c.pmax) { duty = 0; if (!this.atMax) { this.atMax = true; this.log(43, this.pos); } }
+      else if (this.pos < c.pmax - 5) this.atMax = false;
+      if (duty < 0 && this.pos <= 0) { duty = 0; if (!this.atMin) { this.atMin = true; this.log(42, this.pos); } }
+      else if (this.pos > 5) this.atMin = false;
+    }
+    this.duty = Math.round(duty);
+    this.pos = Math.max(-40, Math.min(2400, this.pos + Math.round(duty * 0.45)));
+    this.bat -= 0.00002 + Math.abs(duty) * 3e-7;
+
+    const zk = this.cfg.zk ? 1 : 0;
+    onTel({ t: now, f: Math.round(this.T * 100) / 100, pos: this.pos, bat: Math.round(this.bat * 1000) / 1000, mode: this.mode, reg: this.reg,
+      flags: 1 | 2 | (c.pmax > 0 && zk ? 4 : 0) | (duty ? 8 : 0) | (this.overload ? 16 : 0) | (this.bat < 3.4 ? 32 : 0) | (zk ? 64 : 0) | (this.bat < 3.3 ? 128 : 0),
+      duty: this.duty, err: this.err, raw: Math.round(c.off + this.T * c.scale) });
+  }
+  cmd(s) {
+    const [name, arg] = s.trim().split(/\s+/); const a = parseFloat(arg); const c = this.cfg;
+    const bad = (lo, hi) => { if (isNaN(a) || a < lo || a > hi) { this.log(48, Math.round(a * 100) || 0); return true; } return false; };
+    switch ((name || '').toUpperCase()) {
+      case 'J': if (this.mode !== 0) { if (a) this.log(50, 0); break; }
+        this.jog = isNaN(a) ? 0 : Math.max(-c.maxd, Math.min(c.maxd, a)); if (this.jog && Math.abs(this.jog) < 25) this.jog = Math.sign(this.jog) * 25;
+        this.lastJog = this.ms(); break;
+      case 'MAN': this.jog = 0; if (this.mode !== 0) { this.mode = 0; this.log(4, 0); } break;
+      case 'AUTO': this.base = this.pos; c.base = this.pos; this.mode = 1; this.integ = 0; this.log(5, Math.round(c.tgt * 100)); break;
+      case 'STOP': this.jog = 0; this.mode = 0; this.log(15); break;
+      case 'TGT': if (!bad(0.05, c.fmax)) { c.tgt = a; this.log(14, 1); } break;
+      case 'FMAX': if (!bad(0.1, 60)) { c.fmax = a; c.tgt = Math.min(c.tgt, a); this.log(14, 2); } break;
+      case 'THR': if (!bad(0, 5)) { c.thr = a; this.log(14, 3); } break;
+      case 'KP': if (!bad(0, 500)) { c.kp = a; this.log(14, 4); } break;
+      case 'KI': if (!bad(0, 500)) { c.ki = a; this.log(14, 5); } break;
+      case 'MAXD': if (!bad(20, 100)) { c.maxd = a; this.log(14, 6); } break;
+      case 'TARE': setTimeout(() => this.log(6, c.off), 500); break;
+      case 'CAL': if (!bad(0.05, 50)) setTimeout(() => this.log(7, c.scale), 500); break;
+      case 'ZERO': this.pos = 0; c.zk = 1; this.log(8); break;
+      case 'PMAX': if (this.pos > 5) { c.pmax = this.pos; this.log(9, this.pos); } else this.log(48, this.pos); break;
+      case 'PCLR': c.pmax = 0; this.log(10); break;
+      case 'HOME': this.mode = 2; this.jog = 0; this.homeAt = 0; this.log(11); break;
+      case 'BCAL': if (!bad(2.5, 4.5)) { this.bat = a; this.log(14, 7); } break;
+      case 'MINV': c.minv ^= 1; this.log(14, 8); break;
+      case 'EINV': c.einv ^= 1; this.log(14, 9); break;
+      case 'CLR': this.err = 0; this.log(17); break;
+      case 'RST': this.t0 = performance.now(); this.mode = 0; this.jog = 0; this.err = 0; this.log(1, 3); break;
+      case 'LOGS': case 'CFG': break;
+      default: this.log(47);
+    }
+  }
+}
+let sim = null;
+function startDemo() {
+  if (st.link === 'on') bleDisconnect();
+  sim = new Sim(); st.cfg = { ...sim.cfg };
+  setLink('demo'); addLog(206); renderCfg();
+}
+function stopDemo() { if (sim) sim.stop(); sim = null; setLink('off'); }
+
+// ====================================================================
+//  Widok
+// ====================================================================
+let currentTab = 'ctl';
+document.querySelectorAll('nav.tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+function showTab(name) {
+  currentTab = name;
+  document.querySelectorAll('nav.tabs button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === name));
+  for (const t of ['ctl', 'chart', 'log', 'set']) $('tab-' + t).hidden = t !== name;
+  if (name === 'log') { unseenErr = 0; renderBadge(); renderLogs(); }
+  if (name === 'chart') drawChart();
+  if (name === 'set') renderCfg();
+}
+
+function setLink(s) {
+  st.link = s;
+  const dot = $('dot');
+  dot.className = 'dot' + (s === 'on' ? ' on' : s === 'connecting' ? ' wait' : s === 'demo' ? ' demo' : '');
+  $('stTitle').textContent = { off: 'Rozłączono', connecting: 'Łączenie…', on: 'Połączono', demo: 'Tryb demo' }[s];
+  $('stSub').textContent = s === 'on' && ble.device ? (ble.device.name || 'Hamulec') : s === 'demo' ? 'Symulacja bez urządzenia' : 'Hamulec kołowrotka';
+  $('connectCard').hidden = s === 'on' || s === 'demo';
+  $('btnDisconnect').textContent = s === 'demo' ? 'Zakończ demo' : 'Rozłącz';
+  if (s === 'off') { st.tel = null; stopJog(); }
+  scheduleRender();
+}
+
+let renderPending = false;
+function scheduleRender() { if (!renderPending) { renderPending = true; requestAnimationFrame(render); } }
+function render() {
+  renderPending = false;
+  const t = st.tel, cfg = st.cfg || {}, live = !!t && (st.link === 'on' || st.link === 'demo');
+  const fmax = cfg.fmax || 4;
+  $('fUnit').textContent = unit();
+  if (!live) {
+    $('fVal').textContent = '–'; $('fPct').textContent = '–'; $('fMaxTxt').textContent = cfg.fmax ? fmtF(fmax) : '–';
+    $('bBat').textContent = '–'; $('bHx').textContent = '–';
+  } else {
+    const cal = t.flags & 2;
+    $('fVal').textContent = cal ? nf(toDisp(t.f), prefs.units === 'N' ? 1 : 2) : '–';
+    const pct = Math.max(0, t.f / fmax * 100);
+    $('fPct').textContent = cal ? Math.round(pct) + '%' : 'brak kalibracji';
+    $('fMaxTxt').textContent = fmtF(fmax);
+    const span = fmax * 1.25;
+    const fill = $('gFill');
+    fill.style.width = Math.min(100, Math.max(0, t.f / span * 100)) + '%';
+    fill.className = 'fill' + (t.f > fmax ? ' over' : t.f > 0.9 * fmax ? ' hot' : '');
+    $('gDanger').style.width = (100 - 100 / 1.25) + '%';
+    $('gMid').textContent = nf(toDisp(span / 2), 1); $('gEnd').textContent = nf(toDisp(span), 1);
+    const tm = $('gTarget');
+    tm.style.display = t.mode === 1 ? 'block' : 'none';
+    if (cfg.tgt) tm.style.left = Math.min(100, cfg.tgt / span * 100) + '%';
+    $('sPeak').textContent = cal ? fmtF(st.peak) : '–';
+    $('sHold').textContent = fmtDur(st.holdS);
+    $('sDuty').textContent = (t.duty > 0 ? '+' : '') + t.duty + '%';
+
+    // tryb
+    const ms = $('modeSwitch'), mode = t.mode === 1 ? 'auto' : 'man';
+    ms.dataset.mode = mode;
+    ms.querySelectorAll('button').forEach(b => b.setAttribute('aria-checked', b.dataset.mode === mode));
+    ms.classList.toggle('locked', t.mode === 2);
+    $('manPanel').hidden = mode !== 'man'; $('autoPanel').hidden = mode !== 'auto';
+    const rs = $('regState');
+    rs.textContent = t.mode === 2 ? 'Bazowanie…' : REG_TXT[t.reg] ?? '–';
+    rs.className = 'regstate ' + (REG_CLS[t.reg] || '');
+    $('modeErr').textContent = t.mode === 2 ? 'Trwa bazowanie – odkręcanie do oporu.' : (t.flags & 128) ? 'Bateria krytycznie niska – napęd wyłączony.' : '';
+
+    // pozycja
+    const lim = (t.flags & 4) && cfg.pmax > 0;
+    $('posTxt').textContent = t.pos + ' imp.' + (lim ? ' (' + Math.round(t.pos / cfg.pmax * 100) + '%)' : '');
+    $('posBar').style.width = lim ? Math.min(100, Math.max(0, t.pos / cfg.pmax * 100)) + '%' : '0';
+
+    // dolny pasek
+    const bp = Math.round(Math.min(100, Math.max(0, (t.bat - 3.3) / 0.9 * 100)));
+    $('bBat').innerHTML = t.bat > 2.5 ? `${nf(t.bat, 2)} V (${bp}%)` : 'brak pomiaru';
+    $('bBat').className = (t.flags & 32) ? 'bad' : '';
+    $('bHx').textContent = !(t.flags & 1) ? 'brak danych' : !(t.flags & 2) ? 'nieskalibrowany' : 'OK, ' + (cfg.sps ?? '–') + ' próbek/s';
+    $('bHx').className = !(t.flags & 1) ? 'bad' : '';
+
+    // aktywny błąd
+    $('activeErrRow').hidden = !t.err;
+    if (t.err) $('activeErrTxt').textContent = codeLabel(t.err) + ' · ' + describe(t.err, 0)[0];
+
+    // ustawienia (wartości na żywo)
+    $('kvRaw').textContent = t.raw; $('kvPos').textContent = t.pos + ' imp.';
+    $('kvBat').textContent = t.bat > 2.5 ? nf(t.bat, 3) + ' V' : 'brak pomiaru';
+    $('kvUp').textContent = fmtDur(t.t / 1000);
+  }
+  const canJog = live && t.mode === 0 && !(t.flags & 128);
+  $('jogMinus').disabled = !canJog; $('jogPlus').disabled = !canJog;
+  $('btnStop').disabled = !live;
+  if (currentTab === 'chart') drawChartThrottled();
+}
+
+function renderCfg() {
+  const c = st.cfg; if (!c) return;
+  $('kvSps').textContent = c.sps ?? '–';
+  $('kvScale').textContent = Math.abs(c.scale) > 1 ? nf(c.scale, 1) + ' jedn./kg' : 'brak kalibracji';
+  $('kvOff').textContent = c.off;
+  $('kvPmax').textContent = c.pmax > 0 ? c.pmax + ' imp.' : 'nie ustawiono';
+  $('kvZk').textContent = c.zk ? 'tak' : 'nie';
+  $('kvFw').textContent = c.fw;
+  for (const s of NUM_SETTINGS) {
+    const inp = $('set-' + s.id);
+    if (inp && document.activeElement !== inp) inp.value = +(s.force ? toDisp(c[s.id]) : c[s.id]).toFixed(s.force && prefs.units === 'N' ? 1 : 2);
+    const u = $('unit-' + s.id); if (u) u.textContent = s.force ? unit() : s.unit;
+  }
+  const r = $('tgtRange');
+  r.max = c.fmax; r.step = 0.05;
+  if (!tgtDirty) { r.value = c.tgt; $('tgtOut').textContent = fmtF(c.tgt); }
+  scheduleRender();
+}
+
+// ====================================================================
+//  Sterowanie: tryb, ruch ręczny, cel
+// ====================================================================
+$('modeSwitch').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || !st.tel) return;
+  if (b.dataset.mode === 'auto') {
+    if (!(st.tel.flags & 2)) { $('modeErr').textContent = 'Najpierw skalibruj czujnik siły (zakładka Ustawienia).'; return; }
+    send('AUTO').then(() => setTimeout(readCfg, 300));
+  } else send('MAN');
+});
+
+let jogTimer = null, jogDir = 0;
+function startJog(dir, btn) {
+  if (btn.disabled) return;
+  jogDir = dir; btn.classList.add('active');
+  const tick = () => send('J ' + dir * +$('jogSpeed').value, { fast: true, skipIfBusy: true });
+  tick(); clearInterval(jogTimer); jogTimer = setInterval(tick, 200);
+}
+function stopJog() {
+  if (!jogDir) return;
+  jogDir = 0; clearInterval(jogTimer); jogTimer = null;
+  $('jogMinus').classList.remove('active'); $('jogPlus').classList.remove('active');
+  send('J 0'); setTimeout(() => send('J 0', { fast: true }), 120);
+}
+for (const [id, dir] of [['jogMinus', -1], ['jogPlus', 1]]) {
+  const b = $(id);
+  b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); startJog(dir, b); });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, stopJog);
+  b.addEventListener('keydown', e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); startJog(dir, b); } });
+  b.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') stopJog(); });
+  b.addEventListener('contextmenu', e => e.preventDefault());
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopJog(); });
+$('jogSpeed').addEventListener('input', e => $('jogSpeedOut').textContent = e.target.value + '%');
+
+let tgtDirty = false, tgtTimer = null;
+function setTarget(kg) {
+  const c = st.cfg; if (!c) return;
+  kg = Math.min(c.fmax, Math.max(0.05, Math.round(kg * 20) / 20));
+  $('tgtRange').value = kg; $('tgtOut').textContent = fmtF(kg);
+  tgtDirty = true; clearTimeout(tgtTimer);
+  tgtTimer = setTimeout(async () => { await send('TGT ' + kg.toFixed(2)); tgtDirty = false; readCfg(); }, 350);
+}
+$('tgtRange').addEventListener('input', e => setTarget(+e.target.value));
+$('tgtMinus').addEventListener('click', () => setTarget(+$('tgtRange').value - 0.1));
+$('tgtPlus').addEventListener('click', () => setTarget(+$('tgtRange').value + 0.1));
+
+$('btnStop').addEventListener('click', () => { stopJog(); send('STOP'); });
+$('btnPeakReset').addEventListener('click', () => { st.peak = 0; st.holdS = 0; scheduleRender(); });
+
+// ====================================================================
+//  Ustawienia
+// ====================================================================
+const NUM_SETTINGS = [
+  { id: 'fmax', cmd: 'FMAX', label: 'Siła maksymalna', help: 'Powyżej niej hamulec jest luzowany w każdym trybie', force: true, min: 0.1, max: 60 },
+  { id: 'thr', cmd: 'THR', label: 'Próg napiętej żyłki', help: 'Poniżej progu regulator nie działa', force: true, min: 0, max: 5 },
+  { id: 'kp', cmd: 'KP', label: 'Wzmocnienie Kp', help: 'Część proporcjonalna regulatora', unit: '%/kg', min: 0, max: 500 },
+  { id: 'ki', cmd: 'KI', label: 'Wzmocnienie Ki', help: 'Część całkująca regulatora', unit: '%/(kg·s)', min: 0, max: 500 },
+  { id: 'maxd', cmd: 'MAXD', label: 'Maks. wypełnienie PWM', help: 'Ogranicza prędkość i moment silnika', unit: '%', min: 20, max: 100 },
+];
+$('numSettings').innerHTML = NUM_SETTINGS.map(s => `
+  <div class="setrow">
+    <label for="set-${s.id}">${s.label}<small>${s.help}, <span id="unit-${s.id}">${s.unit || 'kg'}</span></small></label>
+    <input id="set-${s.id}" type="number" inputmode="decimal" step="any">
+    <button class="btn small" data-set="${s.id}">Zapisz</button>
+  </div>`).join('') + '<p class="err-inline" id="setErr"></p>';
+$('numSettings').addEventListener('click', e => {
+  const id = e.target.dataset?.set; if (!id) return;
+  const s = NUM_SETTINGS.find(x => x.id === id);
+  let v = $('set-' + id).valueAsNumber;
+  if (isNaN(v)) { $('setErr').textContent = 'Wpisz liczbę w polu „' + s.label + '”.'; return; }
+  if (s.force) v = fromDisp(v);
+  if (v < s.min || v > s.max) { $('setErr').textContent = s.label + ': dozwolony zakres ' + s.min + '–' + s.max + (s.force ? ' kg' : ''); return; }
+  $('setErr').textContent = '';
+  sendAndReload(s.cmd + ' ' + v.toFixed(3));
+});
+document.querySelectorAll('[data-cmd]').forEach(b => b.addEventListener('click', () => {
+  if (b.dataset.confirm && !confirm(b.dataset.confirm)) return;
+  const ms = +(b.dataset.reload || 0);
+  if (ms) sendAndReload(b.dataset.cmd, ms); else send(b.dataset.cmd);
+}));
+$('btnCal').addEventListener('click', () => {
+  const m = $('calMass').valueAsNumber;
+  if (isNaN(m) || m < 0.05 || m > 50) { $('calErr').textContent = 'Podaj masę od 0,05 do 50 kg.'; return; }
+  $('calErr').textContent = ''; sendAndReload('CAL ' + m.toFixed(3), 900);
+});
+$('btnBcal').addEventListener('click', () => {
+  const v = $('batMeas').valueAsNumber;
+  if (isNaN(v) || v < 2.5 || v > 4.5) { toast('Podaj napięcie od 2,5 do 4,5 V.', 'w'); return; }
+  sendAndReload('BCAL ' + v.toFixed(3));
+});
+$('btnClrErr').addEventListener('click', () => send('CLR'));
+$('btnConnect').addEventListener('click', bleConnect);
+$('btnDemo').addEventListener('click', startDemo);
+$('btnDisconnect').addEventListener('click', () => st.link === 'demo' ? stopDemo() : bleDisconnect());
+
+// opcje aplikacji
+$('optN').checked = prefs.units === 'N'; $('optWake').checked = prefs.wake; $('optAlarm').checked = prefs.alarm; $('optRecon').checked = prefs.recon;
+$('optN').addEventListener('change', e => { prefs.units = e.target.checked ? 'N' : 'kg'; savePrefs(); renderCfg(); scheduleRender(); drawChart(); });
+$('optAlarm').addEventListener('change', e => { prefs.alarm = e.target.checked; savePrefs(); });
+$('optRecon').addEventListener('change', e => { prefs.recon = e.target.checked; savePrefs(); });
+$('optWake').addEventListener('change', e => { prefs.wake = e.target.checked; savePrefs(); applyWake(); });
+
+// ekran zawsze włączony
+let wakeLock = null;
+async function applyWake() {
+  try {
+    if (prefs.wake && !wakeLock && 'wakeLock' in navigator && !document.hidden) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!prefs.wake && wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch {}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) applyWake(); });
+applyWake();
+
+// alarm przy dużej sile
+let lastAlarm = 0, audioCtx = null;
+function alarmCheck(t) {
+  const fmax = st.cfg?.fmax; if (!prefs.alarm || !fmax || !(t.flags & 2)) return;
+  if (t.f < 0.9 * fmax || Date.now() - lastAlarm < 1500) return;
+  lastAlarm = Date.now();
+  if (navigator.vibrate) navigator.vibrate([180, 90, 180]);
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = 1760; g.gain.value = 0.08; o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.18);
+  } catch {}
+}
+
+// ====================================================================
+//  Wykres
+// ====================================================================
+let chartPaused = false, pausedAt = 0, lastDraw = 0;
+document.querySelectorAll('#winSeg button').forEach(b => {
+  b.setAttribute('aria-pressed', +b.dataset.win === prefs.win);
+  b.addEventListener('click', () => {
+    prefs.win = +b.dataset.win; savePrefs();
+    document.querySelectorAll('#winSeg button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    drawChart();
+  });
+});
+$('btnPause').addEventListener('click', () => {
+  chartPaused = !chartPaused; pausedAt = Date.now();
+  $('btnPause').textContent = chartPaused ? 'Wznów' : 'Pauza'; drawChart();
+});
+$('btnClearData').addEventListener('click', () => { if (confirm('Usunąć dane sesji z wykresu?')) { samples.length = 0; st.peak = 0; st.holdS = 0; drawChart(); scheduleRender(); } });
+$('btnCsv').addEventListener('click', () => {
+  if (!samples.length) { toast('Brak danych do eksportu.'); return; }
+  const rows = ['czas;t_s;sila_kg;cel_kg;pozycja_imp;pwm_proc;bateria_V;tryb'];
+  const w0 = samples[0].w;
+  for (const s of samples) rows.push([new Date(s.w).toISOString(), ((s.w - w0) / 1000).toFixed(2), s.f.toFixed(2).replace('.', ','),
+    s.tgt == null ? '' : s.tgt.toFixed(2).replace('.', ','), s.pos, s.duty, s.bat.toFixed(3).replace('.', ','), ['reczny', 'auto', 'bazowanie'][s.mode] ?? s.mode].join(';'));
+  download('hamulec_sesja_' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.csv', '﻿' + rows.join('\n'));
+});
+function drawChartThrottled() { const n = performance.now(); if (n - lastDraw > 90) { lastDraw = n; drawChart(); } }
+function niceStep(range, n) { const raw = range / n, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p; return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p; }
+function lowerBound(arr, w) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m].w < w) lo = m + 1; else hi = m; } return lo; }
+function drawChart() {
+  if (currentTab !== 'chart') return;
+  const cv = $('chart'), dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
+  const P = { l: 46, r: 8, t: 8, b: 24 }, pw = W - P.l - P.r, ph = H - P.t - P.b;
+  const win = prefs.win * 1000, tEnd = chartPaused ? pausedAt : Date.now(), t0 = tEnd - win;
+  const i0 = lowerBound(samples, t0), i1 = lowerBound(samples, tEnd + 1);
+  const fmax = st.cfg?.fmax || 4;
+  let maxF = 0, sum = 0;
+  for (let i = i0; i < i1; i++) { maxF = Math.max(maxF, samples[i].f); sum += samples[i].f; }
+  const n = i1 - i0;
+  $('cMax').textContent = n ? fmtF(maxF) : '–'; $('cAvg').textContent = n ? fmtF(sum / n) : '–'; $('cN').textContent = samples.length;
+  const yMaxKg = Math.max(fmax * 1.1, maxF * 1.1, 0.5), yMax = toDisp(yMaxKg);
+  const X = w => P.l + (w - t0) / win * pw, Y = kg => P.t + ph - toDisp(kg) / yMax * ph;
+
+  ctx.font = '12px system-ui, sans-serif'; ctx.fillStyle = col('--mute'); ctx.strokeStyle = col('--line'); ctx.lineWidth = 1;
+  const ys = niceStep(yMax, 5);
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let v = 0; v <= yMax + 1e-9; v += ys) {
+    const y = P.t + ph - v / yMax * ph;
+    ctx.beginPath(); ctx.moveTo(P.l, Math.round(y) + .5); ctx.lineTo(W - P.r, Math.round(y) + .5); ctx.stroke();
+    ctx.fillText(nf(v, ys < 1 ? 1 : 0), P.l - 6, y);
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  const xs = prefs.win / 6;
+  for (let k = 0; k <= 6; k++) {
+    const x = P.l + k / 6 * pw;
+    ctx.textAlign = k === 6 ? 'right' : 'center';
+    ctx.fillText(k === 6 ? 'teraz' : '−' + fmtDur(prefs.win - k * xs), k === 6 ? W - P.r : x, H - P.b + 6);
+  }
+  ctx.save(); ctx.textAlign = 'left'; ctx.fillText(unit(), 4, 0); ctx.restore();
+
+  // siła maksymalna
+  ctx.setLineDash([6, 5]); ctx.strokeStyle = col('--err'); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(P.l, Y(fmax)); ctx.lineTo(W - P.r, Y(fmax)); ctx.stroke();
+  // cel (tylko gdy tryb auto)
+  ctx.strokeStyle = col('--accent'); ctx.lineWidth = 2; ctx.beginPath(); let pen = false;
+  for (let i = i0; i < i1; i++) { const s = samples[i]; if (s.tgt == null) { pen = false; continue; }
+    const x = X(s.w), y = Y(s.tgt); pen ? ctx.lineTo(x, y) : ctx.moveTo(x, y); pen = true; }
+  ctx.stroke(); ctx.setLineDash([]);
+
+  // siła: obwiednia min/max na kolumnę pikseli
+  if (n > 1) {
+    ctx.strokeStyle = col('--ok'); ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.beginPath();
+    if (n <= pw * 2) {
+      for (let i = i0; i < i1; i++) { const x = X(samples[i].w), y = Y(samples[i].f); i === i0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+    } else {
+      let col0 = -1, mn = 0, mx = 0, first = true;
+      const flush = c => { const x = P.l + c + .5; if (first) { ctx.moveTo(x, Y(mx)); first = false; } else ctx.lineTo(x, Y(mx)); ctx.lineTo(x, Y(mn)); };
+      for (let i = i0; i < i1; i++) {
+        const c = Math.floor((samples[i].w - t0) / win * pw), f = samples[i].f;
+        if (c !== col0) { if (col0 >= 0) flush(col0); col0 = c; mn = mx = f; } else { mn = Math.min(mn, f); mx = Math.max(mx, f); }
+      }
+      if (col0 >= 0) flush(col0);
+    }
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = col('--mute'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(st.link === 'off' ? 'Połącz z urządzeniem lub włącz tryb demo' : 'Czekam na dane…', P.l + pw / 2, P.t + ph / 2);
+  }
+}
+window.addEventListener('resize', () => drawChart());
+
+// ====================================================================
+//  Logi: filtr, eksport
+// ====================================================================
+document.querySelectorAll('#logSeg button').forEach(b => b.addEventListener('click', () => {
+  logFilter = b.dataset.f;
+  document.querySelectorAll('#logSeg button').forEach(x => x.setAttribute('aria-pressed', x === b));
+  renderLogs();
+}));
+$('btnLogClear').addEventListener('click', () => { if (confirm('Wyczyścić dziennik zdarzeń w aplikacji?')) { logs = []; store.set('logs', logs); renderLogs(); } });
+$('btnLogCsv').addEventListener('click', () => {
+  const rows = ['czas;kod;poziom;opis;szczegoly'];
+  for (const l of logs) { const [m, d] = describe(l.c, l.v); rows.push([new Date(l.w).toISOString(), codeLabel(l.c), level(l.c), m, d].map(x => '"' + String(x).replace(/"/g, '""') + '"').join(';')); }
+  download('hamulec_logi_' + new Date().toISOString().slice(0, 10) + '.csv', '﻿' + rows.join('\n'));
+});
+
+// ====================================================================
+//  Praca offline i instalacja
+// ====================================================================
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; $('btnInstall').hidden = false; });
+$('btnInstall').addEventListener('click', async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $('btnInstall').hidden = true; });
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready)
+    .then(() => { $('offlineTxt').textContent = 'Strona zapisana w telefonie – działa bez internetu.'; })
+    .catch(() => { $('offlineTxt').textContent = 'Nie udało się zapisać strony do pracy offline.'; });
+} else {
+  $('offlineTxt').textContent = 'Praca offline działa po otwarciu strony z adresu https (np. GitHub Pages).';
+}
+if (!navigator.bluetooth) $('connectMsg').textContent = 'Ta przeglądarka nie obsługuje Bluetooth. Użyj Chrome na Androidzie lub komputerze albo Bluefy na iPhonie. Tryb demo działa wszędzie.';
+
+renderLogs(); render();
+</script>
+</body>
+</html>
