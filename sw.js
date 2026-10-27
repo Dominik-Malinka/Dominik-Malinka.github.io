@@ -1,7 +1,7 @@
 // Service worker: zapisuje stronę w pamięci telefonu, żeby działała bez internetu.
 // v1.2: najpierw sieć (najnowsza wersja), pamięć telefonu tylko bez internetu.
 // Po każdej zmianie plików strony zwiększ numer wersji (np. hamulec-v5).
-const CACHE = 'hamulec-v4';
+const CACHE = 'hamulec-v5';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png'];
 const NET_TIMEOUT_MS = 4000;   // przy słabym zasięgu po tym czasie strona bierze kopię z pamięci
 

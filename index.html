@@ -434,6 +434,19 @@ table.codes td:first-child { font-weight: 700; width: 52px; }
 </footer>
 
 <script>
+// v1.3: osobny, prosty skrypt. Pokazuje na ekranie każdy błąd skryptu strony,
+// także taki, przez który główny skrypt w ogóle się nie uruchomi.
+window.addEventListener('error', function (e) {
+  var b = document.getElementById('jsErr');
+  if (!b) { b = document.createElement('div'); b.id = 'jsErr';
+    b.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99;background:#c0281b;color:#fff;font:14px/1.4 system-ui,sans-serif;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;white-space:pre-wrap';
+    (document.body || document.documentElement).appendChild(b); }
+  b.textContent += 'Błąd skryptu: ' + e.message + (e.lineno ? ' (linia ' + e.lineno + ')' : '') + '\n';
+});
+</script>
+<script>
+// v1.3: cały kod w osobnym zakresie – nazwy nie zderzają się ze skryptem doklejanym przez Bluefy
+(() => {
 'use strict';
 // ====================================================================
 //  Narzędzia
@@ -467,7 +480,7 @@ function toast(msg, kind = '') {
   setTimeout(() => t.remove(), kind === 'e' ? 6000 : 3500);
 }
 // wersja strony (widoczna pod przyciskiem „Połącz”), pozwala sprawdzić, czy telefon nie trzyma starej kopii
-const APP_VER = '1.2';
+const APP_VER = '1.3';
 $('appVer').textContent = 'Wersja strony ' + APP_VER;
 // błędy skryptu pokazywane na ekranie zamiast cichego zatrzymania
 window.addEventListener('error', e => toast('Błąd strony: ' + e.message, 'e'));
@@ -1207,6 +1220,7 @@ if ('serviceWorker' in navigator && window.isSecureContext && location.protocol 
 if (!navigator.bluetooth) $('connectMsg').textContent = 'Ta przeglądarka nie obsługuje Bluetooth. Użyj Chrome na Androidzie lub komputerze albo Bluefy na iPhonie. Tryb demo działa wszędzie.';
 
 renderLogs(); render();
+})();
 </script>
 </body>
 </html>
